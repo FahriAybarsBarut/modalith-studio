@@ -1,0 +1,25 @@
+name: modalith-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DMODALITH_BUILD_TESTS=ON -DMODALITH_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
