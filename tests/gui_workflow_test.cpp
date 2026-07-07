@@ -35,6 +35,21 @@ TEST(SurfaceEditor, DuplicateAndUndoAreAtomic) {
   EXPECT_EQ(model.rowCount(), 3);
 }
 
+TEST(SurfaceEditor, StopAndTransformColumnsAreEditable) {
+  SurfaceTableModel model;
+  EXPECT_TRUE(model.setCell(1, SurfaceTableModel::Stop, "yes"));
+  EXPECT_EQ(model.data(model.index(1, SurfaceTableModel::Stop), Qt::DisplayRole).toString(),
+            "Yes");
+  EXPECT_TRUE(model.setCell(1, SurfaceTableModel::DecenterY, 1.25));
+  EXPECT_TRUE(model.setCell(1, SurfaceTableModel::TiltX, -2.5));
+  EXPECT_DOUBLE_EQ(model.data(model.index(1, SurfaceTableModel::DecenterY),
+                              Qt::DisplayRole).toDouble(),
+                   1.25);
+  EXPECT_DOUBLE_EQ(model.data(model.index(1, SurfaceTableModel::TiltX),
+                              Qt::DisplayRole).toDouble(),
+                   -2.5);
+}
+
 TEST(ProjectWorkflow, NativeProjectRoundTripsWithoutLosingEngineeringData) {
   QTemporaryDir directory(QDir::current().filePath("modalith-project-test-XXXXXX"));
   ASSERT_TRUE(directory.isValid());
@@ -46,6 +61,8 @@ TEST(ProjectWorkflow, NativeProjectRoundTripsWithoutLosingEngineeringData) {
   controller.setFieldY(4.5);
   controller.setWavelengthText("532, 632.8");
   ASSERT_TRUE(controller.surfaceModel()->setCell(0, SurfaceTableModel::Radius, 48.25));
+  ASSERT_TRUE(controller.surfaceModel()->setCell(0, SurfaceTableModel::DecenterY, 0.75));
+  ASSERT_TRUE(controller.surfaceModel()->setCell(0, SurfaceTableModel::TiltX, 1.5));
   ASSERT_TRUE(controller.saveProject(QUrl::fromLocalFile(path))) << controller.statusText().toStdString();
   EXPECT_FALSE(controller.modified());
 
@@ -59,6 +76,14 @@ TEST(ProjectWorkflow, NativeProjectRoundTripsWithoutLosingEngineeringData) {
                        ->data(controller.surfaceModel()->index(0, SurfaceTableModel::Radius),
                               Qt::DisplayRole).toDouble(),
                    48.25);
+  EXPECT_DOUBLE_EQ(controller.surfaceModel()
+                       ->data(controller.surfaceModel()->index(0, SurfaceTableModel::DecenterY),
+                              Qt::DisplayRole).toDouble(),
+                   0.75);
+  EXPECT_DOUBLE_EQ(controller.surfaceModel()
+                       ->data(controller.surfaceModel()->index(0, SurfaceTableModel::TiltX),
+                              Qt::DisplayRole).toDouble(),
+                   1.5);
   EXPECT_FALSE(controller.modified());
 }
 

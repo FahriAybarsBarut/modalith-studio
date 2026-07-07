@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace {
 constexpr QColor kBackground{24, 27, 31};
@@ -173,8 +174,11 @@ void OpticalLayoutItem::paint(QPainter* painter) {
   for (const auto& surface : controller->layoutSurfaces()) {
     const double axialAllowance = std::isfinite(surface.radius)
         ? std::min(std::abs(surface.radius) * 0.08, surface.semiDiameter) : 0.0;
-    maxZ = std::max(maxZ, surface.vertexZ + axialAllowance);
-    maxY = std::max(maxY, surface.semiDiameter);
+    const double tiltAllowance = std::sin(std::abs(surface.tiltX) * std::numbers::pi / 180.0) *
+        surface.semiDiameter;
+    minZ = std::min(minZ, surface.vertexZ - axialAllowance - tiltAllowance);
+    maxZ = std::max(maxZ, surface.vertexZ + axialAllowance + tiltAllowance);
+    maxY = std::max(maxY, std::abs(surface.decenterY) + surface.semiDiameter);
   }
   maxZ += std::max(2.0, (maxZ - minZ) * 0.04);
   maxY *= 1.25;
@@ -196,6 +200,11 @@ void OpticalLayoutItem::paint(QPainter* painter) {
   for (std::size_t index = 0; index < controller->layoutSurfaces().size(); ++index) {
     const auto& surface = controller->layoutSurfaces()[index];
     QPainterPath profile;
+    modalith::Transform transform;
+    transform.translation = {surface.decenterX, surface.decenterY, surface.vertexZ};
+    transform.rotation = modalith::Mat3::from_euler_xyz(
+        surface.tiltX * std::numbers::pi / 180.0,
+        surface.tiltY * std::numbers::pi / 180.0, 0.0);
     constexpr int segments = 64;
     for (int segment = 0; segment <= segments; ++segment) {
       const double y = -surface.semiDiameter + 2.0 * surface.semiDiameter *
@@ -206,7 +215,8 @@ void OpticalLayoutItem::paint(QPainter* painter) {
       opticalProfile.conic_constant = surface.conic;
       double sag = modalith::surface_sag(opticalProfile, 0.0, y);
       if (!std::isfinite(sag)) sag = 0.0;
-      const QPointF point = map(surface.vertexZ + sag, y);
+      const auto global = transform.point_to_global({0.0, y, sag});
+      const QPointF point = map(global.z, global.y);
       if (segment == 0) profile.moveTo(point); else profile.lineTo(point);
     }
     painter->setPen(QPen{index + 1 == controller->layoutSurfaces().size() ? kOrange : kCyan,

@@ -157,6 +157,7 @@ SurfaceIntersection intersect_surface(const Ray& ray, const OpticalSurface& surf
       estimate = std::max(estimate, kRayOffset * 2.0);
       constexpr std::size_t maximum_iterations = 40;
       constexpr double absolute_tolerance = 1.0e-12;
+      bool converged = false;
       for (std::size_t iteration = 0; iteration < maximum_iterations; ++iteration) {
         const Vec3 point = origin + direction * estimate;
         const double sag = surface_sag(profile, point.x, point.y);
@@ -174,6 +175,7 @@ SurfaceIntersection intersect_surface(const Ray& ray, const OpticalSurface& surf
           if (estimate > kRayOffset) {
             distance = estimate;
           }
+          converged = true;
           break;
         }
         if (std::abs(jacobian) <= kGeometryEpsilon) {
@@ -185,6 +187,52 @@ SurfaceIntersection intersect_surface(const Ray& ray, const OpticalSurface& surf
           break;
         }
       }
+
+      // Bisection fallback when Newton-Raphson fails to converge.
+      if (!converged && !distance) {
+        const double planar_estimate = std::abs(origin.z / direction.z);
+        double t_lo = kRayOffset;
+        double t_hi = std::max(planar_estimate * 3.0, kRayOffset * 4.0);
+
+        auto residual_at = [&](double t) -> double {
+          const Vec3 p = origin + direction * t;
+          return p.z - surface_sag(profile, p.x, p.y);
+        };
+
+        double f_lo = residual_at(t_lo);
+        double f_hi = residual_at(t_hi);
+
+        if (std::isfinite(f_lo) && std::isfinite(f_hi) && f_lo * f_hi < 0.0) {
+          constexpr std::size_t bisection_iterations = 64;
+          for (std::size_t i = 0; i < bisection_iterations; ++i) {
+            const double t_mid = 0.5 * (t_lo + t_hi);
+            const double f_mid = residual_at(t_mid);
+            if (!std::isfinite(f_mid)) {
+              break;
+            }
+            if (std::abs(f_mid) <= absolute_tolerance) {
+              if (t_mid > kRayOffset) {
+                distance = t_mid;
+              }
+              break;
+            }
+            if (f_lo * f_mid < 0.0) {
+              t_hi = t_mid;
+              f_hi = f_mid;
+            } else {
+              t_lo = t_mid;
+              f_lo = f_mid;
+            }
+            if ((t_hi - t_lo) < absolute_tolerance) {
+              const double t_final = 0.5 * (t_lo + t_hi);
+              if (t_final > kRayOffset) {
+                distance = t_final;
+              }
+              break;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -194,8 +242,13 @@ SurfaceIntersection intersect_surface(const Ray& ray, const OpticalSurface& surf
   const Vec3 point_local = origin + direction * *distance;
   const double radial_squared = point_local.x * point_local.x + point_local.y * point_local.y;
   const double aperture_squared = surface.semi_diameter * surface.semi_diameter;
-  const double aperture_tolerance = 32.0 * std::numeric_limits<double>::epsilon() *
-                                    std::max(1.0, aperture_squared);
+  // Scale-aware aperture tolerance: adapts to the working unit scale.
+  // For mm-scale optics (typical), semi_diameter ~ 1-100, so scale_factor ~ 1.
+  // For µm-scale micro-optics, semi_diameter ~ 0.001-1, so a larger relative
+  // tolerance is needed to prevent false ray rejection.
+  const double scale_factor = std::max(1.0, surface.semi_diameter);
+  const double aperture_tolerance = 64.0 * std::numeric_limits<double>::epsilon() *
+                                    scale_factor * std::max(1.0, aperture_squared);
   if (radial_squared > aperture_squared + aperture_tolerance) {
     return {.point_local = point_local,
             .point_global = surface.transform.point_to_global(point_local),

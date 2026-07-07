@@ -81,11 +81,21 @@ See the [architecture and delivery map](docs/architecture.md) for formulas, comp
 Requirements:
 
 - CMake 3.24+
-- A C++20 compiler (MSVC 2022 recommended on Windows)
-- Qt 6.5+ for the desktop application
+- A C++20 compiler (MSVC 2022 recommended on Windows; GCC 12+ or Clang 15+ on Linux/macOS)
+- Qt 6.5+ for the desktop application (optional — pass `-DMODALITH_BUILD_GUI=OFF` for core-only builds)
 - Git
 
 Eigen 3.4 and GoogleTest are acquired by CMake when they are not installed.
+
+### Locating Qt 6
+
+If Qt 6.5+ is installed in a non-standard location, tell CMake where to find it using **one** of these methods (in order of preference):
+
+1. **`QT_DIR` environment variable** — CMake will automatically prepend it to the search path.
+2. **`-DCMAKE_PREFIX_PATH=<qt-install-dir>`** — pass directly on the CMake command line.
+3. **System-installed Qt** — if Qt 6.5+ packages are available system-wide, no extra configuration is needed.
+
+If `MODALITH_BUILD_GUI` is `ON` (the default) and Qt 6.5+ cannot be found, CMake will stop with a clear error message.
 
 ### Windows / Visual Studio
 
@@ -97,19 +107,47 @@ ctest --preset windows-msvc
 
 ### Windows / Ninja with Qt
 
-Run from an x64 Visual Studio Developer PowerShell and adjust the Qt path if needed:
+Run from an x64 Visual Studio Developer PowerShell:
 
 ```powershell
-cmake -S . -B build/modalith -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
+# Set QT_DIR to your Qt installation (adjust version/compiler as needed):
+$env:QT_DIR = "C:/Qt/6.8.3/msvc2022_64"
+
+cmake -S . -B build/modalith -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/modalith --parallel
-C:/Qt/6.8.3/msvc2022_64/bin/windeployqt `
-  --release --qmldir apps/gui/qml build/modalith/modalith_studio.exe
+# windeployqt is run automatically as a post-build step for the GUI target.
 .\build\modalith\modalith_studio.exe
 ```
 
-### Core and CLI on Linux/macOS
+### Linux / Qt GUI
+
+Install Qt 6.5+ from your distribution's package manager or the [Qt online installer](https://www.qt.io/download-qt-installer-oss).
+
+```bash
+# If Qt is installed to a custom prefix:
+export QT_DIR=/opt/Qt/6.8.3/gcc_64
+
+cmake -S . -B build/modalith -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/modalith --parallel
+./build/modalith/modalith_studio
+```
+
+### macOS / Qt GUI
+
+Install Qt 6.5+ via [Homebrew](https://brew.sh/) (`brew install qt@6`) or the Qt online installer.
+
+```bash
+# Homebrew installs Qt here by default:
+export QT_DIR=$(brew --prefix qt@6)
+# Or for a manual installation:
+# export QT_DIR=$HOME/Qt/6.8.3/macos
+
+cmake -S . -B build/modalith -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/modalith --parallel
+./build/modalith/modalith_studio
+```
+
+### Core and CLI only (any platform)
 
 ```bash
 cmake --preset ninja-release -DMODALITH_BUILD_GUI=OFF

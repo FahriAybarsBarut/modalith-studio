@@ -53,36 +53,41 @@ if(MODALITH_BUILD_EXAMPLES)
 endif()
 
 if(MODALITH_BUILD_GUI)
-  find_package(Qt6 6.5 COMPONENTS Core Gui Qml Quick QuickControls2 QUIET)
-  if(Qt6_FOUND)
-    qt_standard_project_setup(REQUIRES 6.5)
-    qt_add_executable(modalith_studio
-      apps/gui/main.cpp
-      apps/gui/modalith_controller.cpp
-      apps/gui/plot_items.cpp
-    )
-    if(WIN32)
-      target_sources(modalith_studio PRIVATE apps/gui/modalith.rc)
-    endif()
-    qt_add_qml_module(modalith_studio
-      URI ModalithApp
-      VERSION 1.0
-      QML_FILES apps/gui/qml/Main.qml
-                apps/gui/qml/ProjectDialogs.qml
-    )
-    target_include_directories(modalith_studio PRIVATE apps/gui)
-    target_link_libraries(modalith_studio PRIVATE
-      Modalith::Core
-      Qt6::Core
-      Qt6::Gui
-      Qt6::Qml
-      Qt6::Quick
-      Qt6::QuickControls2
-    )
-    set_target_properties(modalith_studio PROPERTIES WIN32_EXECUTABLE TRUE)
-  else()
-    message(STATUS "Qt 6.5+ not found; modalith_studio will not be built")
+  if(DEFINED ENV{QT_DIR})
+    list(PREPEND CMAKE_PREFIX_PATH $ENV{QT_DIR})
   endif()
+  find_package(Qt6 6.5 COMPONENTS Core Gui Qml Quick QuickControls2 QUIET)
+  if(NOT Qt6_FOUND)
+    message(FATAL_ERROR
+      "Qt6 6.5+ not found. Set the QT_DIR environment variable or pass "
+      "-DCMAKE_PREFIX_PATH=<qt-install-dir> to CMake. "
+      "To build without the GUI, pass -DMODALITH_BUILD_GUI=OFF.")
+  endif()
+  qt_standard_project_setup(REQUIRES 6.5)
+  qt_add_executable(modalith_studio
+    apps/gui/main.cpp
+    apps/gui/modalith_controller.cpp
+    apps/gui/plot_items.cpp
+  )
+  if(WIN32)
+    target_sources(modalith_studio PRIVATE apps/gui/modalith.rc)
+  endif()
+  qt_add_qml_module(modalith_studio
+    URI ModalithApp
+    VERSION 1.0
+    QML_FILES apps/gui/qml/Main.qml
+              apps/gui/qml/ProjectDialogs.qml
+  )
+  target_include_directories(modalith_studio PRIVATE apps/gui)
+  target_link_libraries(modalith_studio PRIVATE
+    Modalith::Core
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+  )
+  set_target_properties(modalith_studio PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
 include(CTest)
@@ -120,13 +125,23 @@ if(MODALITH_BUILD_TESTS)
     target_link_libraries(modalith_gui_tests PRIVATE
       Modalith::Core GTest::gtest_main Qt6::Core Qt6::Gui
     )
-    add_custom_command(TARGET modalith_gui_tests POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:Qt6::Core>
-        $<TARGET_FILE:Qt6::Gui>
-        $<TARGET_FILE_DIR:modalith_gui_tests>
-      COMMENT "Deploying Qt runtime for GUI workflow tests"
-    )
+    if(WIN32)
+      find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS ${Qt6_DIR}/../../../bin)
+      if(WINDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET modalith_gui_tests POST_BUILD
+          COMMAND ${WINDEPLOYQT_EXECUTABLE}
+            --no-compiler-runtime
+            --no-translations
+            --no-opengl-sw
+            $<TARGET_FILE:modalith_gui_tests>
+          COMMENT "Running windeployqt for GUI workflow tests"
+        )
+      else()
+        message(WARNING "windeployqt not found; Qt DLLs must be deployed manually for modalith_gui_tests")
+      endif()
+    else()
+      # On non-Windows platforms Qt shared libraries are found via RPATH.
+    endif()
     gtest_discover_tests(modalith_gui_tests)
   endif()
 endif()
