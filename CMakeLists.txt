@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(Modalith VERSION 0.2.0 LANGUAGES CXX)
+project(Modalith VERSION 0.2.1 LANGUAGES CXX)
 
 option(MODALITH_BUILD_TESTS "Build Modalith unit and regression tests" ON)
 option(MODALITH_BUILD_EXAMPLES "Build Modalith command-line examples" ON)
