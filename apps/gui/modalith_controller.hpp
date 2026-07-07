@@ -18,14 +18,33 @@ struct SurfaceRecord {
   QString glass;
   double semiDiameter{};
   double conic{};
+  QString asphereCoeffs;
   bool stop{};
+  double decenterX{};
+  double decenterY{};
+  double tiltX{};
+  double tiltY{};
 };
 
 class SurfaceTableModel final : public QAbstractTableModel {
   Q_OBJECT
 
 public:
-  enum Column { Type, Radius, Thickness, Glass, SemiDiameter, Conic, ColumnCount };
+  enum Column {
+    Type,
+    Radius,
+    Thickness,
+    Glass,
+    SemiDiameter,
+    Conic,
+    AsphereCoeffs,
+    Stop,
+    DecenterX,
+    DecenterY,
+    TiltX,
+    TiltY,
+    ColumnCount
+  };
 
   explicit SurfaceTableModel(QObject* parent = nullptr);
   [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
@@ -67,6 +86,10 @@ struct GuiSurface {
   double radius{};
   double semiDiameter{};
   double conic{};
+  double decenterX{};
+  double decenterY{};
+  double tiltX{};
+  double tiltY{};
   modalith::SurfaceType type{modalith::SurfaceType::Plane};
 };
 
@@ -87,6 +110,7 @@ class ModalithController final : public QObject {
   Q_PROPERTY(double temperatureC READ temperatureC WRITE setTemperatureC NOTIFY projectChanged)
   Q_PROPERTY(QString wavelengthText READ wavelengthText WRITE setWavelengthText NOTIFY projectChanged)
   Q_PROPERTY(int wavelengthCount READ wavelengthCount NOTIFY projectChanged)
+  Q_PROPERTY(double referenceWavelength READ referenceWavelength NOTIFY projectChanged)
   Q_PROPERTY(QString currentFile READ currentFile NOTIFY projectChanged)
   Q_PROPERTY(bool modified READ modified NOTIFY projectChanged)
   Q_PROPERTY(bool canUndo READ canUndo NOTIFY projectChanged)
@@ -111,6 +135,7 @@ public:
   [[nodiscard]] double temperatureC() const noexcept { return temperatureC_; }
   [[nodiscard]] QString wavelengthText() const;
   [[nodiscard]] int wavelengthCount() const noexcept { return static_cast<int>(wavelengthsNm_.size()); }
+  [[nodiscard]] double referenceWavelength() const noexcept;
   [[nodiscard]] QString currentFile() const { return currentFile_; }
   [[nodiscard]] bool modified() const noexcept { return modified_; }
   [[nodiscard]] bool canUndo() const noexcept { return surfaceModel_.canUndo(); }

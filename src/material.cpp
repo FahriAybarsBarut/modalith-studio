@@ -68,15 +68,18 @@ MaterialCatalog::MaterialCatalog() {
   add(std::make_shared<Sellmeier3>(
       "N-BK7",
       std::array{1.03961212, 0.231792344, 1.01046945},
-      std::array{0.00600069867, 0.0200179144, 103.560653}));
+      std::array{0.00600069867, 0.0200179144, 103.560653},
+      3.0e-6));
   add(std::make_shared<Sellmeier3>(
       "N-F2",
       std::array{1.34533359, 0.209073176, 0.937357162},
-      std::array{0.00997743871, 0.0470450767, 111.886764}));
+      std::array{0.00997743871, 0.0470450767, 111.886764},
+      2.8e-6));
   add(std::make_shared<Sellmeier3>(
       "FUSED_SILICA",
       std::array{0.6961663, 0.4079426, 0.8974794},
-      std::array{0.00467914826, 0.0135120631, 97.9340025}));
+      std::array{0.00467914826, 0.0135120631, 97.9340025},
+      10.0e-6));
 }
 
 void MaterialCatalog::add(std::shared_ptr<const Material> material) {

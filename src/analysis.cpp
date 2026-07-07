@@ -43,15 +43,24 @@ Ray SequentialAnalysis::launch_ray(const OpticalSystem& system, FieldAngle field
   }
   const double aperture = entrance_semi_diameter(system);
   const auto& first = system.surfaces.front();
-  const Vec3 origin_local{pupil.x * aperture, pupil.y * aperture, -1.0e-6};
+  const double local_x = pupil.x * aperture;
+  const double local_y = pupil.y * aperture;
+  const double first_sag = surface_sag(first.profile, local_x, local_y);
+  const double z_start = std::min(-1.0, (std::isfinite(first_sag) ? first_sag : 0.0) - 1.0);
   const Vec3 direction{
     std::tan(degrees_to_radians(field.x_degrees)),
     std::tan(degrees_to_radians(field.y_degrees)),
     1.0
   };
+  const Vec3 u = normalized(direction);
+  const Vec3 origin_local{
+    local_x + z_start * u.x / u.z,
+    local_y + z_start * u.y / u.z,
+    z_start
+  };
   return {
     .origin = first.transform.point_to_global(origin_local),
-    .direction = normalized(direction),
+    .direction = u,
     .wavelength_nm = wavelength_nm
   };
 }

@@ -256,7 +256,7 @@ ApplicationWindow {
                     Label { text: "Sampling"; color: root.secondaryTextColor }
                     Label { text: "Concentric"; color: root.textColor }
                     Label { text: "Reference"; color: root.secondaryTextColor }
-                    Label { text: "587.6 nm"; color: root.textColor }
+                    Label { text: modalithController.referenceWavelength.toFixed(1) + " nm"; color: root.textColor }
                 }
                 Item { Layout.fillHeight: true }
                 Rectangle {
@@ -365,8 +365,8 @@ ApplicationWindow {
                         model: surfaceModel
                         columnSpacing: 1
                         rowSpacing: 1
-                        property var widths: [126, 92, 94, 105, 112, 82]
-                        columnWidthProvider: function(column) { return widths[column] }
+                        property var widths: [120, 84, 86, 96, 104, 70, 110, 58, 88, 88, 74, 74]
+                        columnWidthProvider: function(column) { return widths[column] || 82 }
                         delegate: Rectangle {
                             id: cell
                             required property int row
@@ -376,7 +376,15 @@ ApplicationWindow {
                             implicitHeight: 31
                             color: root.selectedSurfaceRow === row ? root.selectionColor : (row % 2 ? "#1d2025" : root.panelColor)
                             border.color: root.borderColor
+                            CheckBox {
+                                visible: cell.column === 7
+                                anchors.centerIn: parent
+                                checked: cell.display === "Yes"
+                                onActiveFocusChanged: if (activeFocus) root.selectedSurfaceRow = cell.row
+                                onToggled: surfaceModel.setCell(cell.row, cell.column, checked ? "Yes" : "No")
+                            }
                             TextField {
+                                visible: cell.column !== 7
                                 anchors.fill: parent
                                 anchors.margins: 1
                                 leftPadding: 6
@@ -467,7 +475,7 @@ ApplicationWindow {
                                 columns: 2
                                 rowSpacing: 7
                                 Label { text: "Reference wavelength"; color: root.secondaryTextColor }
-                                Label { text: "587.5618 nm"; color: root.textColor; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
+                                Label { text: modalithController.referenceWavelength.toFixed(4) + " nm"; color: root.textColor; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
                                 Label { text: "Pupil samples"; color: root.secondaryTextColor }
                                 Label { text: modalithController.fanSamples; color: root.textColor; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
                             }

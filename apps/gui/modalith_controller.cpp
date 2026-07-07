@@ -39,6 +39,10 @@ private:
   return url.isLocalFile() ? url.toLocalFile() : url.toString();
 }
 
+[[nodiscard]] double degreesToRadians(double degrees) noexcept {
+  return degrees * std::numbers::pi / 180.0;
+}
+
 [[nodiscard]] QJsonObject surfaceToJson(const SurfaceRecord& surface) {
   QJsonObject object;
   object["type"] = surface.type;
@@ -48,7 +52,12 @@ private:
   object["glass"] = surface.glass;
   object["semiDiameter"] = surface.semiDiameter;
   object["conic"] = surface.conic;
+  object["asphereCoeffs"] = surface.asphereCoeffs;
   object["stop"] = surface.stop;
+  object["decenterX"] = surface.decenterX;
+  object["decenterY"] = surface.decenterY;
+  object["tiltX"] = surface.tiltX;
+  object["tiltY"] = surface.tiltY;
   return object;
 }
 
@@ -62,7 +71,12 @@ private:
   surface.glass = object["glass"].toString("AIR").toUpper();
   surface.semiDiameter = object["semiDiameter"].toDouble(10.0);
   surface.conic = object["conic"].toDouble();
+  surface.asphereCoeffs = object["asphereCoeffs"].toString("");
   surface.stop = object["stop"].toBool();
+  surface.decenterX = object["decenterX"].toDouble();
+  surface.decenterY = object["decenterY"].toDouble();
+  surface.tiltX = object["tiltX"].toDouble();
+  surface.tiltY = object["tiltY"].toDouble();
   if (!(surface.semiDiameter > 0.0)) {
     throw std::runtime_error("Surface semi-diameter must be positive");
   }
@@ -97,6 +111,12 @@ QVariant SurfaceTableModel::data(const QModelIndex& index, int role) const {
     case Glass: return record.glass;
     case SemiDiameter: return record.semiDiameter;
     case Conic: return record.conic;
+    case AsphereCoeffs: return record.asphereCoeffs;
+    case Stop: return record.stop ? "Yes" : "No";
+    case DecenterX: return record.decenterX;
+    case DecenterY: return record.decenterY;
+    case TiltX: return record.tiltX;
+    case TiltY: return record.tiltY;
     default: return {};
   }
 }
@@ -105,7 +125,8 @@ QVariant SurfaceTableModel::headerData(int section, Qt::Orientation orientation,
   if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
     return QAbstractTableModel::headerData(section, orientation, role);
   static const QStringList headers{"Surface Type", "Radius", "Thickness", "Material",
-                                   "Semi-Diameter", "Conic"};
+                                   "Semi-Diameter", "Conic", "Asphere Coeffs", "Stop",
+                                   "Decenter X", "Decenter Y", "Tilt X", "Tilt Y"};
   return section >= 0 && section < headers.size() ? headers[section] : QVariant{};
 }
 
@@ -150,6 +171,33 @@ bool SurfaceTableModel::setData(const QModelIndex& index, const QVariant& value,
       if (valid) record.conic = parsed;
       break;
     }
+    case AsphereCoeffs: {
+      record.asphereCoeffs = value.toString().trimmed();
+      break;
+    }
+    case Stop: {
+      const QString text = value.toString().trimmed().toLower();
+      if (text == "1" || text == "true" || text == "yes" || text == "stop") {
+        record.stop = true;
+      } else if (text == "0" || text == "false" || text == "no" || text.isEmpty()) {
+        record.stop = false;
+      } else {
+        valid = false;
+      }
+      break;
+    }
+    case DecenterX:
+    case DecenterY:
+    case TiltX:
+    case TiltY: {
+      const double parsed = value.toString().toDouble(&valid);
+      if (!valid || !std::isfinite(parsed)) { valid = false; break; }
+      if (index.column() == DecenterX) record.decenterX = parsed;
+      else if (index.column() == DecenterY) record.decenterY = parsed;
+      else if (index.column() == TiltX) record.tiltX = parsed;
+      else record.tiltY = parsed;
+      break;
+    }
     default: return false;
   }
   if (!valid || record.type.isEmpty() || record.glass.isEmpty()) return false;
@@ -176,7 +224,7 @@ void SurfaceTableModel::addSurface() {
   auto after = records_;
   const auto insertion = std::max<std::ptrdiff_t>(0, static_cast<std::ptrdiff_t>(after.size()) - 1);
   after.insert(after.begin() + insertion,
-               {"Sphere", 100.0, 5.0, "AIR", 12.5, 0.0, false});
+               {"Sphere", 100.0, 5.0, "AIR", 12.5, 0.0, "", false});
   pushSnapshot("Insert surface", std::move(after));
 }
 
@@ -210,9 +258,9 @@ void SurfaceTableModel::replaceRecords(std::vector<SurfaceRecord> records, bool 
 
 void SurfaceTableModel::resetToSinglet() {
   replaceRecords({
-    {"Sphere", 50.0, 5.0, "N-BK7", 12.5, 0.0, true},
-    {"Sphere", -50.0, 47.0, "AIR", 12.5, 0.0, false},
-    {"Plane", std::numeric_limits<double>::infinity(), 0.0, "AIR", 25.0, 0.0, false}
+    {"Sphere", 50.0, 5.0, "N-BK7", 12.5, 0.0, "", true},
+    {"Sphere", -50.0, 47.0, "AIR", 12.5, 0.0, "", false},
+    {"Plane", std::numeric_limits<double>::infinity(), 0.0, "AIR", 25.0, 0.0, "", false}
   });
 }
 
@@ -277,6 +325,11 @@ QString ModalithController::wavelengthText() const {
   return values.join(", ");
 }
 
+double ModalithController::referenceWavelength() const noexcept {
+  if (wavelengthsNm_.empty()) return 587.5618;
+  return wavelengthsNm_[wavelengthsNm_.size() / 2];
+}
+
 void ModalithController::setWavelengthText(const QString& value) {
   std::vector<double> parsed;
   const auto parts = value.split(QRegularExpression("[,;\\s]+"), Qt::SkipEmptyParts);
@@ -306,7 +359,9 @@ modalith::OpticalSystem ModalithController::buildOpticalSystem() {
   for (const auto& record : surfaceModel_.records()) {
     modalith::OpticalSurface surface;
     surface.label = record.type.toStdString();
-    surface.transform.translation = {0.0, 0.0, vertexZ};
+    surface.transform.translation = {record.decenterX, record.decenterY, vertexZ};
+    surface.transform.rotation = modalith::Mat3::from_euler_xyz(
+        degreesToRadians(record.tiltX), degreesToRadians(record.tiltY), 0.0);
     const QString type = record.type.toLower();
     if (type.contains("asphere")) surface.profile.type = modalith::SurfaceType::EvenAsphere;
     else if (type.contains("conic")) surface.profile.type = modalith::SurfaceType::Conic;
@@ -314,6 +369,16 @@ modalith::OpticalSystem ModalithController::buildOpticalSystem() {
     else surface.profile.type = modalith::SurfaceType::Sphere;
     surface.profile.radius = record.radius;
     surface.profile.conic_constant = record.conic;
+    if (!record.asphereCoeffs.isEmpty()) {
+      const auto parts = record.asphereCoeffs.split(QRegularExpression("[,;\\s]+"), Qt::SkipEmptyParts);
+      for (const QString& part : parts) {
+        bool ok = false;
+        const double coeff = part.toDouble(&ok);
+        if (ok && std::isfinite(coeff)) {
+          surface.profile.even_asphere_coefficients.push_back(coeff);
+        }
+      }
+    }
     surface.semi_diameter = record.semiDiameter;
     surface.stop = record.stop;
     surface.material_after = catalog_.find(record.glass.toStdString());
@@ -470,21 +535,37 @@ void ModalithController::duplicateSurface(int row) { surfaceModel_.duplicateSurf
 
 void ModalithController::buildLayoutData(const modalith::OpticalSystem& system) {
   layoutSurfaces_.clear();
-  for (const auto& surface : system.surfaces)
+  for (std::size_t index = 0; index < system.surfaces.size(); ++index) {
+    const auto& surface = system.surfaces[index];
+    const auto& record = surfaceModel_.records()[index];
     layoutSurfaces_.push_back({surface.transform.translation.z, surface.profile.radius,
                                surface.semi_diameter, surface.profile.conic_constant,
-                               surface.profile.type});
+                               surface.transform.translation.x, surface.transform.translation.y,
+                               record.tiltX, record.tiltY, surface.profile.type});
+  }
   layoutRays_.clear();
   if (system.surfaces.empty()) return;
   const double aperture = system.surfaces.front().semi_diameter;
   const double radiansX = fieldX_ * std::numbers::pi / 180.0;
   const double radiansY = fieldY_ * std::numbers::pi / 180.0;
   const double referenceWavelength = wavelengthsNm_[wavelengthsNm_.size() / 2];
+  const auto& first = system.surfaces.front();
   for (int sample = -5; sample <= 5; ++sample) {
     const double pupilY = aperture * static_cast<double>(sample) / 5.0;
-    modalith::Ray ray{.origin = {0.0, pupilY, -3.0},
-                    .direction = modalith::normalized({std::tan(radiansX), std::tan(radiansY), 1.0}),
-                    .wavelength_nm = referenceWavelength};
+    const double first_sag = modalith::surface_sag(first.profile, 0.0, pupilY);
+    const double z_start = std::min(-1.0, (std::isfinite(first_sag) ? first_sag : 0.0) - 1.0);
+    const modalith::Vec3 direction{std::tan(radiansX), std::tan(radiansY), 1.0};
+    const modalith::Vec3 u = modalith::normalized(direction);
+    const modalith::Vec3 origin_local{
+      z_start * u.x / u.z,
+      pupilY + z_start * u.y / u.z,
+      z_start
+    };
+    modalith::Ray ray{
+      .origin = first.transform.point_to_global(origin_local),
+      .direction = u,
+      .wavelength_nm = referenceWavelength
+    };
     const auto trace = tracer_.trace(system, ray);
     QVector<QPointF> path;
     path.append(QPointF(ray.origin.z, ray.origin.y));
