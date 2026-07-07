@@ -7,3 +7,4 @@ CMakeUserPresets.json
 *.suo
 
 /dist/
+/run_studio.bat
