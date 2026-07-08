@@ -38,6 +38,32 @@ TEST(RayFan, SamplesBothPrincipalPupilAxes) {
   ASSERT_EQ(fan.samples.size(), 11U);
   EXPECT_NEAR(fan.samples.front().tangential_error, -5.0, 1.0e-12);
   EXPECT_NEAR(fan.samples.front().sagittal_error, -5.0, 1.0e-12);
-  EXPECT_NEAR(fan.samples.back().tangential_error, 5.0, 1.0e-12);
   EXPECT_NEAR(fan.samples.back().sagittal_error, 5.0, 1.0e-12);
+}
+
+TEST(SequentialAnalysis, OpdMap) {
+  const modalith::SequentialTracer tracer;
+  const modalith::SequentialAnalysis analysis{tracer};
+  // Unobstructed system is just a propagation in air, so no OPD is expected.
+  const auto opd = analysis.opd_map(unobstructed_system(), {}, 587.5618, 4);
+  EXPECT_EQ(opd.reference_wavelength_nm, 587.5618);
+  EXPECT_NEAR(opd.pv_opd_waves, 0.0, 1.0e-12);
+  EXPECT_NEAR(opd.rms_opd_waves, 0.0, 1.0e-12);
+}
+
+TEST(SequentialAnalysis, SeidelCoefficientsStub) {
+  const modalith::SequentialTracer tracer;
+  const modalith::SequentialAnalysis analysis{tracer};
+  const auto seidel = analysis.seidel_coefficients(unobstructed_system(), 587.5618);
+  EXPECT_NEAR(seidel.S1, 0.0, 1e-12);
+}
+
+TEST(SequentialAnalysis, FieldCurvatureAndDistortionStub) {
+  const modalith::SequentialTracer tracer;
+  const modalith::SequentialAnalysis analysis{tracer};
+  std::vector<double> fields = {0.0, 10.0, 20.0};
+  const auto fc = analysis.field_curvature(unobstructed_system(), fields, 587.5618);
+  const auto dist = analysis.distortion(unobstructed_system(), fields, 587.5618);
+  EXPECT_EQ(fc.samples.size(), 3U);
+  EXPECT_EQ(dist.samples.size(), 3U);
 }

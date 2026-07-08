@@ -38,7 +38,14 @@ Item {
         id: openDialog
         title: "Open Modalith project"
         fileMode: FileDialog.OpenFile
-        nameFilters: ["Modalith projects (*.modalith)", "Legacy Photon projects (*.photon)", "All files (*)"]
+        nameFilters: [
+            "Modalith projects (*.modalith)",
+            "Legacy Photon projects (*.photon)",
+            "Zemax projects (*.zmx)",
+            "CODE V sequence files (*.seq)",
+            "CAD files (*.step *.iges *.stl)",
+            "All files (*)"
+        ]
         onAccepted: {
             if (controller.modified) {
                 dialogs.pendingOpenUrl = selectedFile
@@ -53,8 +60,10 @@ Item {
         id: saveDialog
         title: "Save Modalith project"
         fileMode: FileDialog.SaveFile
-        defaultSuffix: "modalith"
-        nameFilters: ["Modalith projects (*.modalith)"]
+        nameFilters: [
+            "Modalith projects (*.modalith)",
+            "Zemax projects (*.zmx)"
+        ]
         onAccepted: controller.saveProject(selectedFile)
     }
 
@@ -66,6 +75,16 @@ Item {
         nameFilters: ["CSV data (*.csv)"]
         onAccepted: controller.exportAnalysisCsv(selectedFile)
     }
+
+    FileDialog {
+        id: importCatalogDialog
+        title: "Import Glass Catalog (.agf)"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["Zemax Glass Catalogs (*.agf)", "All files (*)"]
+        onAccepted: controller.importGlassCatalog(selectedFile)
+    }
+
+    function importGlassCatalog() { importCatalogDialog.open() }
 
     Dialog {
         id: confirmNewDialog

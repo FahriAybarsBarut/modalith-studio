@@ -1,0 +1,75 @@
+# Modalith Studio — clang-format configuration
+# Based on LLVM style with project-specific overrides.
+
+BasedOnStyle: LLVM
+Standard: c++20
+ColumnLimit: 100
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+AccessModifierOffset: -2
+
+# Includes & pragmas
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"modalith/'
+    Priority: 1
+  - Regex: '^<(eigen3|Eigen)/'
+    Priority: 3
+  - Regex: '^<Q'
+    Priority: 4
+  - Regex: '^<'
+    Priority: 5
+  - Regex: '.*'
+    Priority: 2
+
+# Braces & formatting
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+PackConstructorInitializers: NextLine
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Pointer & reference
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+# Spaces
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeParens: ControlStatements
+SpacesInAngles: Never
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Penalties
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# Lambdas & modern C++
+LambdaBodyIndentation: Signature
+RequiresClausePosition: OwnLine
+IndentRequiresClause: true
+
+# Misc
+FixNamespaceComments: true
+CompactNamespaces: false
+ReflowComments: true
+InsertNewlineAtEOF: true

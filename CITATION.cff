@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+title: Modalith Studio
+message: 'If you use this software, please cite it using these metadata.'
+type: software
+authors:
+  - name: Fahri Aybars Barut
+repository-code: https://github.com/FahriAybarsBarut/modalith-studio
+license: MIT
+version: 0.2.1

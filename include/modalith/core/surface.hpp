@@ -14,15 +14,31 @@ enum class SurfaceType {
   Plane,
   Sphere,
   Conic,
-  EvenAsphere
+  EvenAsphere,
+  OddAsphere,
+  ZernikeSag,
+  CoordinateBreak,
+  Mirror,
+  Biconic // Represents Cylindrical, Toroidal via different X and Y radii
 };
 
 struct SurfaceProfile {
   SurfaceType type{SurfaceType::Plane};
-  double radius{std::numeric_limits<double>::infinity()};
-  double conic_constant{};
+  double radius{std::numeric_limits<double>::infinity()}; // Base radius (Y-axis)
+  double conic_constant{}; // Conic constant (Y-axis)
+  
+  double radius_x{std::numeric_limits<double>::infinity()}; // Radius for X-axis
+  double conic_x{}; // Conic constant for X-axis
+
   // Coefficients A4, A6, A8, ... in mm^-(order-1).
   std::vector<double> even_asphere_coefficients;
+
+  // OddAsphere: coefficients A1, A2, A3, ... (general polynomial)
+  std::vector<double> odd_asphere_coefficients;
+
+  // ZernikeSag: Zernike coefficients (Fringe ordering, starting from Z1)
+  std::vector<double> zernike_coefficients;
+  double zernike_norm_radius{1.0};  // Normalization radius for Zernike polynomials
 };
 
 struct OpticalSurface {
@@ -32,6 +48,7 @@ struct OpticalSurface {
   double semi_diameter{std::numeric_limits<double>::infinity()};
   std::shared_ptr<const Material> material_after{MaterialCatalog::air()};
   bool stop{};
+  bool is_mirror{false};  // If true, ray is reflected instead of refracted
 };
 
 enum class IntersectionFailure {

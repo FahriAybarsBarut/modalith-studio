@@ -69,7 +69,7 @@ ApplicationWindow {
             title: qsTr("Tools")
             Action { text: qsTr("System settings…"); onTriggered: projectDialogs.editSystemSettings() }
             Action { text: qsTr("Export analysis data…"); onTriggered: projectDialogs.exportAnalysis() }
-            Action { text: qsTr("Glass catalog"); enabled: false }
+            Action { text: qsTr("Import Glass Catalog (.agf)…"); onTriggered: projectDialogs.importGlassCatalog() }
         }
         Menu {
             title: qsTr("Help")

@@ -62,6 +62,124 @@ double Sellmeier3::refractive_index(double wavelength_nm, double temperature_c) 
   return std::sqrt(index_squared) + dn_dt_ * (temperature_c - 20.0);
 }
 
+// ---------------------------------------------------------------------------
+// SchottDispersion
+// ---------------------------------------------------------------------------
+
+SchottDispersion::SchottDispersion(std::string name,
+                                   std::array<double, 6> coefficients,
+                                   double dn_dt)
+    : name_(std::move(name)), a_(coefficients), dn_dt_(dn_dt) {}
+
+double SchottDispersion::refractive_index(double wavelength_nm,
+                                           double temperature_c) const {
+  if (!(wavelength_nm > 0.0) || !std::isfinite(wavelength_nm) ||
+      !std::isfinite(temperature_c)) {
+    throw std::invalid_argument("Wavelength and temperature must be finite");
+  }
+
+  const double lam = wavelength_nm * 1.0e-3;  // nm -> µm
+  const double l2 = lam * lam;
+  const double l2_inv = 1.0 / l2;
+
+  const double n2 = a_[0] + a_[1] * l2 + a_[2] * l2_inv +
+                     a_[3] * (l2_inv * l2_inv) +
+                     a_[4] * (l2_inv * l2_inv * l2_inv) +
+                     a_[5] * (l2_inv * l2_inv * l2_inv * l2_inv);
+
+  if (!(n2 > 0.0) || !std::isfinite(n2)) {
+    throw std::domain_error("Schott equation produced a non-physical index");
+  }
+  return std::sqrt(n2) + dn_dt_ * (temperature_c - 20.0);
+}
+
+// ---------------------------------------------------------------------------
+// CauchyDispersion
+// ---------------------------------------------------------------------------
+
+CauchyDispersion::CauchyDispersion(std::string name, double a, double b,
+                                     double c, double dn_dt)
+    : name_(std::move(name)), a_(a), b_(b), c_(c), dn_dt_(dn_dt) {}
+
+double CauchyDispersion::refractive_index(double wavelength_nm,
+                                            double temperature_c) const {
+  if (!(wavelength_nm > 0.0) || !std::isfinite(wavelength_nm) ||
+      !std::isfinite(temperature_c)) {
+    throw std::invalid_argument("Wavelength and temperature must be finite");
+  }
+
+  const double lam = wavelength_nm * 1.0e-3;
+  const double l2 = lam * lam;
+  const double n = a_ + b_ / l2 + c_ / (l2 * l2);
+
+  if (!(n > 0.0) || !std::isfinite(n)) {
+    throw std::domain_error("Cauchy equation produced a non-physical index");
+  }
+  return n + dn_dt_ * (temperature_c - 20.0);
+}
+
+// ---------------------------------------------------------------------------
+// HerzbergerDispersion
+// ---------------------------------------------------------------------------
+
+HerzbergerDispersion::HerzbergerDispersion(std::string name,
+                                             std::array<double, 6> coefficients,
+                                             double dn_dt)
+    : name_(std::move(name)), a_(coefficients), dn_dt_(dn_dt) {}
+
+double HerzbergerDispersion::refractive_index(double wavelength_nm,
+                                                double temperature_c) const {
+  if (!(wavelength_nm > 0.0) || !std::isfinite(wavelength_nm) ||
+      !std::isfinite(temperature_c)) {
+    throw std::invalid_argument("Wavelength and temperature must be finite");
+  }
+
+  const double lam = wavelength_nm * 1.0e-3;
+  const double l2 = lam * lam;
+  const double l4 = l2 * l2;
+  const double t = l2 - 0.028;  // Herzberger offset
+
+  if (std::abs(t) < 1.0e-15) {
+    throw std::domain_error("Wavelength lies on a Herzberger resonance pole");
+  }
+
+  const double n = a_[0] + a_[1] * l2 + a_[2] * l4 +
+                   a_[3] / t + a_[4] / (t * t) + a_[5] / (t * t * t);
+
+  if (!(n > 0.0) || !std::isfinite(n)) {
+    throw std::domain_error("Herzberger equation produced a non-physical index");
+  }
+  return n + dn_dt_ * (temperature_c - 20.0);
+}
+
+// ---------------------------------------------------------------------------
+// ConradyDispersion
+// ---------------------------------------------------------------------------
+
+ConradyDispersion::ConradyDispersion(std::string name, double a, double b,
+                                       double c, double dn_dt)
+    : name_(std::move(name)), a_(a), b_(b), c_(c), dn_dt_(dn_dt) {}
+
+double ConradyDispersion::refractive_index(double wavelength_nm,
+                                              double temperature_c) const {
+  if (!(wavelength_nm > 0.0) || !std::isfinite(wavelength_nm) ||
+      !std::isfinite(temperature_c)) {
+    throw std::invalid_argument("Wavelength and temperature must be finite");
+  }
+
+  const double lam = wavelength_nm * 1.0e-3;
+  const double n = a_ + b_ / lam + c_ / std::pow(lam, 3.5);
+
+  if (!(n > 0.0) || !std::isfinite(n)) {
+    throw std::domain_error("Conrady equation produced a non-physical index");
+  }
+  return n + dn_dt_ * (temperature_c - 20.0);
+}
+
+// ---------------------------------------------------------------------------
+// MaterialCatalog
+// ---------------------------------------------------------------------------
+
 MaterialCatalog::MaterialCatalog() {
   add(air());
   // Schott catalog coefficients; wavelength is in micrometres.

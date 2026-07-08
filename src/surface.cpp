@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 
 namespace modalith {
@@ -51,7 +52,132 @@ namespace {
       order += 2.0;
     }
   }
+
+  if (profile.type == SurfaceType::OddAsphere) {
+    // OddAsphere: d/dr sum(A_i * r^i, i=1..N)
+    double radial_power = 1.0;  // r^0 for d(A1*r)/dr
+    double order = 1.0;
+    for (double coefficient : profile.odd_asphere_coefficients) {
+      derivative += order * coefficient * radial_power;
+      radial_power *= radius;
+      order += 1.0;
+    }
+  }
   return derivative;
+}
+
+// Fringe Zernike polynomials Z1..Z37.
+// Each function takes (rho, theta) where rho is the normalized radial
+// coordinate and theta is the azimuthal angle.
+[[nodiscard]] double fringe_zernike(int index, double rho, double theta) {
+  const double rho2 = rho * rho;
+  const double rho3 = rho2 * rho;
+  const double rho4 = rho2 * rho2;
+  const double rho5 = rho4 * rho;
+  const double rho6 = rho3 * rho3;
+  const double rho7 = rho6 * rho;
+  const double rho8 = rho4 * rho4;
+
+  switch (index) {
+    case 1:  return 1.0;                                                    // Piston
+    case 2:  return rho * std::cos(theta);                                  // Tilt X
+    case 3:  return rho * std::sin(theta);                                  // Tilt Y
+    case 4:  return 2.0 * rho2 - 1.0;                                       // Defocus
+    case 5:  return rho2 * std::cos(2.0 * theta);                           // Astigmatism (0/90)
+    case 6:  return rho2 * std::sin(2.0 * theta);                           // Astigmatism (45)
+    case 7:  return (3.0 * rho3 - 2.0 * rho) * std::cos(theta);             // Coma X
+    case 8:  return (3.0 * rho3 - 2.0 * rho) * std::sin(theta);             // Coma Y
+    case 9:  return 6.0 * rho4 - 6.0 * rho2 + 1.0;                         // Primary spherical
+    case 10: return rho3 * std::cos(3.0 * theta);                           // Trefoil X
+    case 11: return rho3 * std::sin(3.0 * theta);                           // Trefoil Y
+    case 12: return (4.0 * rho4 - 3.0 * rho2) * std::cos(2.0 * theta);     // Secondary astigmatism X
+    case 13: return (4.0 * rho4 - 3.0 * rho2) * std::sin(2.0 * theta);     // Secondary astigmatism Y
+    case 14: return (10.0 * rho5 - 12.0 * rho3 + 3.0 * rho) * std::cos(theta);  // Secondary coma X
+    case 15: return (10.0 * rho5 - 12.0 * rho3 + 3.0 * rho) * std::sin(theta);  // Secondary coma Y
+    case 16: return 20.0 * rho6 - 30.0 * rho4 + 12.0 * rho2 - 1.0;         // Secondary spherical
+    case 17: return rho4 * std::cos(4.0 * theta);                           // Tetrafoil X
+    case 18: return rho4 * std::sin(4.0 * theta);                           // Tetrafoil Y
+    case 19: return (5.0 * rho5 - 4.0 * rho3) * std::cos(3.0 * theta);     // Secondary trefoil X
+    case 20: return (5.0 * rho5 - 4.0 * rho3) * std::sin(3.0 * theta);     // Secondary trefoil Y
+    case 21: return (15.0 * rho6 - 20.0 * rho4 + 6.0 * rho2) * std::cos(2.0 * theta);  // Tertiary astigmatism X
+    case 22: return (15.0 * rho6 - 20.0 * rho4 + 6.0 * rho2) * std::sin(2.0 * theta);  // Tertiary astigmatism Y
+    case 23: return (35.0 * rho7 - 60.0 * rho5 + 30.0 * rho3 - 4.0 * rho) * std::cos(theta);  // Tertiary coma X
+    case 24: return (35.0 * rho7 - 60.0 * rho5 + 30.0 * rho3 - 4.0 * rho) * std::sin(theta);  // Tertiary coma Y
+    case 25: return 70.0 * rho8 - 140.0 * rho6 + 90.0 * rho4 - 20.0 * rho2 + 1.0;  // Tertiary spherical
+    case 26: return rho5 * std::cos(5.0 * theta);                           // Pentafoil X
+    case 27: return rho5 * std::sin(5.0 * theta);                           // Pentafoil Y
+    case 28: return (6.0 * rho6 - 5.0 * rho4) * std::cos(4.0 * theta);     // Secondary tetrafoil X
+    case 29: return (6.0 * rho6 - 5.0 * rho4) * std::sin(4.0 * theta);     // Secondary tetrafoil Y
+    case 30: return (21.0 * rho7 - 30.0 * rho5 + 10.0 * rho3) * std::cos(3.0 * theta);  // Tertiary trefoil X
+    case 31: return (21.0 * rho7 - 30.0 * rho5 + 10.0 * rho3) * std::sin(3.0 * theta);  // Tertiary trefoil Y
+    case 32: return (56.0 * rho8 - 105.0 * rho6 + 60.0 * rho4 - 10.0 * rho2) * std::cos(2.0 * theta);  // 4th astigmatism X
+    case 33: return (56.0 * rho8 - 105.0 * rho6 + 60.0 * rho4 - 10.0 * rho2) * std::sin(2.0 * theta);  // 4th astigmatism Y
+    case 34: return (126.0 * rho8 * rho - 280.0 * rho7 + 210.0 * rho5 - 60.0 * rho3 + 5.0 * rho) * std::cos(theta);  // 4th coma X
+    case 35: return (126.0 * rho8 * rho - 280.0 * rho7 + 210.0 * rho5 - 60.0 * rho3 + 5.0 * rho) * std::sin(theta);  // 4th coma Y
+    case 36: return 252.0 * rho8 * rho2 - 630.0 * rho8 + 560.0 * rho6 - 210.0 * rho4 + 30.0 * rho2 - 1.0;  // 4th spherical
+    case 37: return 924.0 * rho8 * rho4 - 2772.0 * rho8 * rho2 + 3150.0 * rho8 - 1680.0 * rho6 + 420.0 * rho4 - 42.0 * rho2 + 1.0;  // 5th spherical
+    default: return 0.0;
+  }
+}
+
+// OddAsphere sag: conic base + A1*r + A2*r^2 + A3*r^3 + ...
+[[nodiscard]] double odd_asphere_sag(const SurfaceProfile& profile, double x, double y) {
+  const double radial_squared = x * x + y * y;
+  double sag = base_conic_sag(profile, radial_squared);
+  if (!std::isfinite(sag)) {
+    return sag;
+  }
+  const double radius = std::sqrt(radial_squared);
+  double radial_power = radius;  // r^1
+  for (double coefficient : profile.odd_asphere_coefficients) {
+    sag += coefficient * radial_power;
+    radial_power *= radius;
+  }
+  return sag;
+}
+
+// ZernikeSag sag: conic base + sum(c_j * Z_j(rho, theta))
+[[nodiscard]] double zernike_sag(const SurfaceProfile& profile, double x, double y) {
+  const double radial_squared = x * x + y * y;
+  double sag = base_conic_sag(profile, radial_squared);
+  if (!std::isfinite(sag)) {
+    return sag;
+  }
+  const double radius = std::sqrt(radial_squared);
+  const double rho = profile.zernike_norm_radius > kGeometryEpsilon
+                         ? radius / profile.zernike_norm_radius
+                         : 0.0;
+  const double theta = std::atan2(y, x);
+  const int num_terms = static_cast<int>(profile.zernike_coefficients.size());
+  for (int j = 0; j < num_terms; ++j) {
+    if (std::abs(profile.zernike_coefficients[j]) > kGeometryEpsilon) {
+      sag += profile.zernike_coefficients[j] * fringe_zernike(j + 1, rho, theta);
+    }
+  }
+  return sag;
+}
+
+// Biconic sag: Toroidal / Cylindrical generalization
+[[nodiscard]] double biconic_sag(const SurfaceProfile& profile, double x, double y) {
+  double cx = 0.0;
+  if (std::isfinite(profile.radius_x) && std::abs(profile.radius_x) > kGeometryEpsilon) {
+    cx = 1.0 / profile.radius_x;
+  }
+  double cy = 0.0;
+  if (std::isfinite(profile.radius) && std::abs(profile.radius) > kGeometryEpsilon) {
+    cy = 1.0 / profile.radius;
+  }
+  
+  const double x2 = x * x;
+  const double y2 = y * y;
+  
+  const double radicand = 1.0 - (1.0 + profile.conic_x) * cx * cx * x2 
+                              - (1.0 + profile.conic_constant) * cy * cy * y2;
+  if (radicand < 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  
+  return (cx * x2 + cy * y2) / (1.0 + std::sqrt(std::max(0.0, radicand)));
 }
 
 [[nodiscard]] std::optional<double> nearest_forward_root(double a, double b, double c) {
@@ -94,6 +220,19 @@ namespace {
 }  // namespace
 
 double surface_sag(const SurfaceProfile& profile, double x, double y) {
+  if (profile.type == SurfaceType::CoordinateBreak) {
+    return 0.0;
+  }
+  if (profile.type == SurfaceType::OddAsphere) {
+    return odd_asphere_sag(profile, x, y);
+  }
+  if (profile.type == SurfaceType::ZernikeSag) {
+    return zernike_sag(profile, x, y);
+  }
+  if (profile.type == SurfaceType::Biconic) {
+    return biconic_sag(profile, x, y);
+  }
+
   const double radial_squared = x * x + y * y;
   double sag = base_conic_sag(profile, radial_squared);
   if (!std::isfinite(sag)) {
@@ -108,10 +247,30 @@ double surface_sag(const SurfaceProfile& profile, double x, double y) {
       radial_power *= radial_squared;
     }
   }
+
+  // Mirror type uses the conic profile (already computed above).
   return sag;
 }
 
 Vec3 surface_normal_local(const SurfaceProfile& profile, double x, double y) {
+  if (profile.type == SurfaceType::CoordinateBreak) {
+    return {0.0, 0.0, 1.0};
+  }
+
+  // For non-rotationally-symmetric surfaces use numerical partial derivatives.
+  if (profile.type == SurfaceType::ZernikeSag || profile.type == SurfaceType::Biconic) {
+    constexpr double h = 1.0e-7;
+    const double z0 = surface_sag(profile, x, y);
+    const double dz_dx = (surface_sag(profile, x + h, y) - z0) / h;
+    const double dz_dy = (surface_sag(profile, x, y + h) - z0) / h;
+    if (!std::isfinite(dz_dx) || !std::isfinite(dz_dy)) {
+      return {std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0};
+    }
+    return normalized({-dz_dx, -dz_dy, 1.0});
+  }
+
+  // Rotationally symmetric surfaces (Plane, Sphere, Conic, EvenAsphere,
+  // OddAsphere, Mirror) use the analytic radial derivative.
   const double radius = std::hypot(x, y);
   const double radial_derivative = sag_radial_derivative(profile, radius);
   if (!std::isfinite(radial_derivative)) {
@@ -129,8 +288,21 @@ SurfaceIntersection intersect_surface(const Ray& ray, const OpticalSurface& surf
   const Vec3 origin = surface.transform.point_to_local(ray.origin);
   const Vec3 direction = surface.transform.direction_to_local(ray.direction);
 
-  std::optional<double> distance;
   const auto& profile = surface.profile;
+
+  // CoordinateBreak: zero-thickness transform surface, distance = 0.
+  if (profile.type == SurfaceType::CoordinateBreak) {
+    const Vec3 point_local = origin;  // No propagation — the ray stays at origin.
+    return {
+      .point_local = point_local,
+      .point_global = surface.transform.point_to_global(point_local),
+      .normal_global = normalized(surface.transform.direction_to_global({0.0, 0.0, 1.0})),
+      .distance = 0.0,
+      .failure = IntersectionFailure::None
+    };
+  }
+
+  std::optional<double> distance;
   if (is_plane(profile)) {
     if (std::abs(direction.z) > kGeometryEpsilon) {
       const double plane_distance = -origin.z / direction.z;
@@ -138,7 +310,8 @@ SurfaceIntersection intersect_surface(const Ray& ray, const OpticalSurface& surf
         distance = plane_distance;
       }
     }
-  } else if (profile.type != SurfaceType::EvenAsphere) {
+  } else if (profile.type == SurfaceType::Sphere || profile.type == SurfaceType::Conic
+             || profile.type == SurfaceType::Mirror) {
     // Rotational conic implicit equation:
     // x^2 + y^2 + (1+k)z^2 - 2Rz = 0.
     const double one_plus_k = 1.0 + profile.conic_constant;

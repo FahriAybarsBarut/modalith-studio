@@ -1,0 +1,11 @@
+{
+  "name": "modalith",
+  "version-string": "0.2.1",
+  "description": "Modalith Studio — modal analysis and visualization toolkit",
+  "license": "MIT",
+  "dependencies": [
+    "eigen3",
+    "gtest",
+    "entt"
+  ]
+}

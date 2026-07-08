@@ -1,0 +1,29 @@
+Modalith Studio
+Copyright (c) Fahri Aybars Barut
+
+Licensed under the MIT License. See LICENSE file for details.
+
+================================================================================
+Third-Party Software Notices
+================================================================================
+
+This software includes or depends on the following third-party libraries:
+
+1. Eigen3
+   License: Mozilla Public License 2.0 (MPL2)
+   Website: https://eigen.tuxfamily.org
+   Copyright (c) Benoît Jacob, Gaël Guennebaud, and contributors
+
+2. Qt6
+   License: GNU Lesser General Public License v3 (LGPLv3) / Commercial
+   Website: https://www.qt.io
+   Copyright (c) The Qt Company Ltd.
+
+3. GoogleTest
+   License: BSD 3-Clause License (BSD-3-Clause)
+   Website: https://github.com/google/googletest
+   Copyright (c) Google LLC
+
+================================================================================
+Each third-party component is governed by its own license terms. Please refer
+to the respective project websites for full license texts.

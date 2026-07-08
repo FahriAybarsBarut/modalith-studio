@@ -11,6 +11,8 @@
 
 #include <vector>
 
+class QTextStream;
+
 struct SurfaceRecord {
   QString type;
   double radius{};
@@ -160,6 +162,7 @@ public:
   Q_INVOKABLE bool openProject(const QUrl& url);
   Q_INVOKABLE bool saveProject(const QUrl& url = {});
   Q_INVOKABLE bool exportAnalysisCsv(const QUrl& url);
+  Q_INVOKABLE bool importGlassCatalog(const QUrl& url);
   Q_INVOKABLE void undo();
   Q_INVOKABLE void redo();
   Q_INVOKABLE void duplicateSurface(int row);
@@ -176,6 +179,12 @@ private:
   void scheduleAnalysis();
   void markModified();
   void setStatus(QString status);
+
+  bool parseZmx(const QString& content, std::vector<SurfaceRecord>& outRecords,
+                QString& outTitle, double& outTemp, std::vector<double>& outWavelengths);
+  bool parseSeq(const QString& content, std::vector<SurfaceRecord>& outRecords,
+                QString& outTitle, double& outTemp, std::vector<double>& outWavelengths);
+  void exportZmx(QTextStream& stream);
 
   modalith::MaterialCatalog catalog_;
   SurfaceTableModel surfaceModel_;

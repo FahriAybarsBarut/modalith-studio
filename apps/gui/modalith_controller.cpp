@@ -438,6 +438,64 @@ void ModalithController::newProject() {
 
 bool ModalithController::openProject(const QUrl& url) {
   const QString path = localPath(url);
+  const QString suffix = QFileInfo(path).suffix().toLower();
+
+  if (suffix == "zmx" || suffix == "seq") {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      setStatus("Unable to open project: " + file.errorString());
+      return false;
+    }
+    QTextStream stream(&file);
+    QString content = stream.readAll();
+    file.close();
+
+    std::vector<SurfaceRecord> records;
+    QString title = QFileInfo(path).completeBaseName();
+    double temp = 20.0;
+    std::vector<double> wavelengths;
+
+    bool ok = false;
+    if (suffix == "zmx") {
+      ok = parseZmx(content, records, title, temp, wavelengths);
+    } else {
+      ok = parseSeq(content, records, title, temp, wavelengths);
+    }
+
+    if (!ok) {
+      setStatus("Failed to parse project file");
+      return false;
+    }
+    if (records.size() < 2) {
+      setStatus("Invalid project: A project requires at least two surfaces");
+      return false;
+    }
+    if (wavelengths.empty()) {
+      wavelengths = {587.5618};
+    }
+
+    loadingProject_ = true;
+    surfaceModel_.replaceRecords(std::move(records));
+    systemTitle_ = title;
+    temperatureC_ = temp;
+    wavelengthsNm_ = std::move(wavelengths);
+    fieldX_ = 0.0;
+    fieldY_ = 0.0;
+    pupilRings_ = 8;
+    currentFile_ = QFileInfo(path).absoluteFilePath();
+    modified_ = false;
+    loadingProject_ = false;
+    emit settingsChanged();
+    emit projectChanged();
+    analyze();
+    setStatus("Opened " + QFileInfo(path).fileName());
+    return true;
+  } else if (suffix == "step" || suffix == "iges" || suffix == "stl" ||
+             suffix == "ies" || suffix == "ldt" || suffix == "bsdf" || suffix == "sca") {
+    setStatus("Format is planned but not yet supported in sequential mode.");
+    return false;
+  }
+
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly)) { setStatus("Unable to open project: " + file.errorString()); return false; }
   QJsonParseError parseError;
@@ -484,6 +542,29 @@ bool ModalithController::saveProject(const QUrl& url) {
   QString path = url.isEmpty() ? currentFile_ : localPath(url);
   if (path.isEmpty()) { setStatus("Choose a project filename"); return false; }
   if (QFileInfo(path).suffix().isEmpty()) path += ".modalith";
+  const QString suffix = QFileInfo(path).suffix().toLower();
+
+  if (suffix == "zmx") {
+    QSaveFile saveFile(path);
+    if (!saveFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+      setStatus("Unable to save project: " + saveFile.errorString());
+      return false;
+    }
+    QTextStream stream(&saveFile);
+    stream.setEncoding(QStringConverter::Utf8);
+    exportZmx(stream);
+    stream.flush();
+    if (!saveFile.commit()) {
+      setStatus("Unable to commit project: " + saveFile.errorString());
+      return false;
+    }
+    currentFile_ = QFileInfo(path).absoluteFilePath();
+    modified_ = false;
+    emit projectChanged();
+    setStatus("Saved " + QFileInfo(path).fileName());
+    return true;
+  }
+
   QJsonObject root;
   root["format"] = "modalith-system";
   root["version"] = 1;
@@ -527,6 +608,437 @@ bool ModalithController::exportAnalysisCsv(const QUrl& url) {
   if (!file.commit()) { setStatus("Unable to commit CSV export"); return false; }
   setStatus("Exported " + QFileInfo(path).fileName());
   return true;
+}
+
+bool ModalithController::importGlassCatalog(const QUrl& url) {
+  const QString path = localPath(url);
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    setStatus("Unable to open glass catalog: " + file.errorString());
+    return false;
+  }
+
+  QTextStream stream(&file);
+  QString content = stream.readAll();
+  file.close();
+
+  const QStringList lines = content.split('\n');
+
+  int importedCount = 0;
+  QString currentName;
+  int formulaType = 0;
+  double nd = 0.0;
+  double vd = 0.0;
+  bool hasGlassInfo = false;
+
+  for (const QString& line : lines) {
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty()) continue;
+
+    const QStringList parts = trimmed.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    if (parts.isEmpty()) continue;
+
+    const QString cmd = parts[0].toUpper();
+
+    if (cmd == "NM") {
+      currentName = "";
+      formulaType = 0;
+      nd = 0.0;
+      vd = 0.0;
+      hasGlassInfo = false;
+
+      if (parts.size() > 5) {
+        currentName = parts[1].toUpper();
+        formulaType = parts[2].toInt();
+        nd = parts[4].toDouble();
+        vd = parts[5].toDouble();
+        hasGlassInfo = true;
+
+        if (formulaType != 1 && std::isfinite(nd) && nd > 0.0) {
+          try {
+            catalog_.add(std::make_shared<modalith::ConstantIndex>(currentName.toStdString(), nd));
+            importedCount++;
+            hasGlassInfo = false;
+          } catch (...) {}
+        }
+      }
+    } else if (cmd == "CD" && hasGlassInfo && formulaType == 1) {
+      if (parts.size() > 6) {
+        std::array<double, 3> b = { parts[1].toDouble(), parts[3].toDouble(), parts[5].toDouble() };
+        std::array<double, 3> c = { parts[2].toDouble(), parts[4].toDouble(), parts[6].toDouble() };
+
+        try {
+          catalog_.add(std::make_shared<modalith::Sellmeier3>(currentName.toStdString(), b, c, 0.0));
+          importedCount++;
+        } catch (...) {}
+      }
+      hasGlassInfo = false;
+    }
+  }
+
+  if (importedCount > 0) {
+    setStatus(QString("Successfully imported %1 glass%2 from %3")
+                  .arg(importedCount)
+                  .arg(importedCount > 1 ? "es" : "")
+                  .arg(QFileInfo(path).fileName()));
+    return true;
+  } else {
+    setStatus("No valid glasses found in catalog file");
+    return false;
+  }
+}
+
+bool ModalithController::parseZmx(const QString& content, std::vector<SurfaceRecord>& outRecords,
+                                  QString& outTitle, double& outTemp, std::vector<double>& outWavelengths) {
+  outRecords.clear();
+  outWavelengths.clear();
+  outTemp = 20.0;
+
+  const QStringList lines = content.split('\n');
+
+  struct ZmxSurf {
+    QString type = "Plane";
+    double radius = std::numeric_limits<double>::infinity();
+    double thickness = 0.0;
+    QString glass = "AIR";
+    double semiDiameter = 10.0;
+    double conic = 0.0;
+    double decenterX = 0.0;
+    double decenterY = 0.0;
+    double tiltX = 0.0;
+    double tiltY = 0.0;
+    std::array<double, 8> asphereCoeffs = {0.0};
+  };
+
+  std::map<int, ZmxSurf> surfaces;
+  int currentSurfIndex = -1;
+  int stopSurfIndex = -1;
+
+  for (const QString& line : lines) {
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty()) continue;
+
+    const QStringList parts = trimmed.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    if (parts.isEmpty()) continue;
+
+    const QString cmd = parts[0].toUpper();
+
+    if (cmd == "TITL") {
+      if (parts.size() > 1) {
+        outTitle = trimmed.mid(trimmed.indexOf(parts[1])).trimmed();
+      }
+    } else if (cmd == "TEMP") {
+      if (parts.size() > 1) {
+        outTemp = parts[1].toDouble();
+      }
+    } else if (cmd == "WAVM" && parts.size() > 2) {
+      double wavelength_nm = parts[2].toDouble() * 1000.0;
+      if (std::isfinite(wavelength_nm) && wavelength_nm > 0.0) {
+        outWavelengths.push_back(wavelength_nm);
+      }
+    } else if (cmd == "STOP" && parts.size() > 1) {
+      stopSurfIndex = parts[1].toInt();
+    } else if (cmd == "SURF" && parts.size() > 1) {
+      currentSurfIndex = parts[1].toInt();
+      if (surfaces.find(currentSurfIndex) == surfaces.end()) {
+        surfaces[currentSurfIndex] = ZmxSurf();
+      }
+    } else if (currentSurfIndex >= 0) {
+      ZmxSurf& s = surfaces[currentSurfIndex];
+      if (cmd == "TYPE") {
+        if (parts.size() > 1) {
+          const QString typeName = parts[1].toUpper();
+          if (typeName == "STANDARD") s.type = "Sphere";
+          else if (typeName == "EVENASPH") s.type = "Even Asphere";
+          else s.type = "Plane";
+        }
+      } else if (cmd == "CURV" && parts.size() > 1) {
+        double curv = parts[1].toDouble();
+        s.radius = (std::abs(curv) < 1.0e-15) ? std::numeric_limits<double>::infinity() : (1.0 / curv);
+      } else if (cmd == "DISZ" && parts.size() > 1) {
+        s.thickness = parts[1].toDouble();
+      } else if (cmd == "GLAS" && parts.size() > 1) {
+        s.glass = parts[1].toUpper();
+      } else if (cmd == "DIAM" && parts.size() > 1) {
+        s.semiDiameter = parts[1].toDouble();
+      } else if (cmd == "CONI" && parts.size() > 1) {
+        s.conic = parts[1].toDouble();
+      } else if (cmd == "PARM" && parts.size() > 2) {
+        int paramIndex = parts[1].toInt();
+        double paramVal = parts[2].toDouble();
+        if (paramIndex >= 1 && paramIndex <= 8) {
+          s.asphereCoeffs[paramIndex - 1] = paramVal;
+        }
+      } else if (cmd == "TILT" && parts.size() > 1) {
+        s.tiltX = parts[1].toDouble();
+        if (parts.size() > 2) s.tiltY = parts[2].toDouble();
+      } else if (cmd == "DECE" && parts.size() > 1) {
+        s.decenterX = parts[1].toDouble();
+        if (parts.size() > 2) s.decenterY = parts[2].toDouble();
+      }
+    }
+  }
+
+  if (surfaces.empty()) return false;
+
+  int maxIndex = 0;
+  for (const auto& [idx, s] : surfaces) {
+    if (idx > maxIndex) maxIndex = idx;
+  }
+
+  if (maxIndex < 1) return false;
+
+  for (int i = 1; i <= maxIndex; ++i) {
+    ZmxSurf s;
+    if (surfaces.find(i) != surfaces.end()) {
+      s = surfaces[i];
+    }
+
+    SurfaceRecord rec;
+    rec.type = s.type;
+    rec.radius = s.radius;
+    rec.thickness = s.thickness;
+    rec.glass = s.glass;
+    rec.semiDiameter = s.semiDiameter;
+    rec.conic = s.conic;
+    rec.stop = (i == stopSurfIndex);
+    rec.decenterX = s.decenterX;
+    rec.decenterY = s.decenterY;
+    rec.tiltX = s.tiltX;
+    rec.tiltY = s.tiltY;
+
+    if (rec.type == "Even Asphere") {
+      QStringList coeffStrings;
+      for (int k = 0; k < 8; ++k) {
+        coeffStrings.append(QString::number(s.asphereCoeffs[k], 'g', 12));
+      }
+      rec.asphereCoeffs = coeffStrings.join(", ");
+    } else {
+      rec.asphereCoeffs = "";
+    }
+
+    outRecords.push_back(std::move(rec));
+  }
+
+  if (outRecords.size() < 2) return false;
+  return true;
+}
+
+bool ModalithController::parseSeq(const QString& content, std::vector<SurfaceRecord>& outRecords,
+                                  QString& outTitle, double& outTemp, std::vector<double>& outWavelengths) {
+  outRecords.clear();
+  outWavelengths.clear();
+  outTemp = 20.0;
+
+  const QStringList lines = content.split('\n');
+
+  struct SeqSurf {
+    QString type = "Plane";
+    double radius = std::numeric_limits<double>::infinity();
+    double thickness = 0.0;
+    QString glass = "AIR";
+    double semiDiameter = 10.0;
+    double conic = 0.0;
+    double decenterX = 0.0;
+    double decenterY = 0.0;
+    double tiltX = 0.0;
+    double tiltY = 0.0;
+    std::array<double, 8> asphereCoeffs = {0.0};
+  };
+
+  std::map<int, SeqSurf> surfaces;
+  int stopSurfIndex = -1;
+
+  for (const QString& line : lines) {
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty() || trimmed.startsWith('!')) continue;
+
+    const QStringList parts = trimmed.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    if (parts.isEmpty()) continue;
+
+    const QString cmd = parts[0].toUpper();
+
+    if (cmd == "TIT" || cmd == "TITLE") {
+      if (parts.size() > 1) {
+        QString text = trimmed.mid(trimmed.indexOf(parts[1])).trimmed();
+        if (text.startsWith('\'') && text.endsWith('\'') && text.size() > 1) {
+          text = text.mid(1, text.size() - 2);
+        }
+        outTitle = text;
+      }
+    } else if (cmd == "WL" || cmd == "WAV") {
+      for (int i = 1; i < parts.size(); ++i) {
+        double w = parts[i].toDouble();
+        if (std::isfinite(w) && w > 0.0) {
+          outWavelengths.push_back(w);
+        }
+      }
+    } else if (cmd == "STO" || cmd == "STOP") {
+      if (parts.size() > 1) {
+        stopSurfIndex = parts[1].toInt();
+      }
+    } else if (cmd == "S" || cmd == "SO") {
+      if (parts.size() > 2) {
+        int idx = parts[1].toInt();
+        if (surfaces.find(idx) == surfaces.end()) {
+          surfaces[idx] = SeqSurf();
+        }
+        SeqSurf& s = surfaces[idx];
+
+        const QString prop = parts[2].toUpper();
+        if (prop == "RAD" && parts.size() > 3) {
+          s.radius = parts[3].toDouble();
+          if (s.type == "Plane" && std::isfinite(s.radius)) {
+            s.type = "Sphere";
+          }
+        } else if (prop == "THI" && parts.size() > 3) {
+          s.thickness = parts[3].toDouble();
+        } else if ((prop == "GL1" || prop == "GLA" || prop == "GLASS") && parts.size() > 3) {
+          s.glass = parts[3].toUpper();
+          if (s.glass.startsWith('\'') && s.glass.endsWith('\'') && s.glass.size() > 1) {
+            s.glass = s.glass.mid(1, s.glass.size() - 2);
+          }
+        } else if (prop == "SD" && parts.size() > 3) {
+          s.semiDiameter = parts[3].toDouble();
+        } else if (prop == "K" && parts.size() > 3) {
+          s.conic = parts[3].toDouble();
+          if (s.type == "Sphere" || s.type == "Plane") {
+            s.type = "Sphere";
+          }
+        } else if (prop == "STO") {
+          stopSurfIndex = idx;
+        } else if (prop == "A" && parts.size() > 3) {
+          s.asphereCoeffs[0] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "B" && parts.size() > 3) {
+          s.asphereCoeffs[1] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "C" && parts.size() > 3) {
+          s.asphereCoeffs[2] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "D" && parts.size() > 3) {
+          s.asphereCoeffs[3] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "E" && parts.size() > 3) {
+          s.asphereCoeffs[4] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "F" && parts.size() > 3) {
+          s.asphereCoeffs[5] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "G" && parts.size() > 3) {
+          s.asphereCoeffs[6] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        } else if (prop == "H" && parts.size() > 3) {
+          s.asphereCoeffs[7] = parts[3].toDouble();
+          s.type = "Even Asphere";
+        }
+      }
+    }
+  }
+
+  if (surfaces.empty()) return false;
+
+  int maxIndex = 0;
+  for (const auto& [idx, s] : surfaces) {
+    if (idx > maxIndex) maxIndex = idx;
+  }
+
+  if (maxIndex < 1) return false;
+
+  for (int i = 1; i <= maxIndex; ++i) {
+    SeqSurf s;
+    if (surfaces.find(i) != surfaces.end()) {
+      s = surfaces[i];
+    }
+
+    SurfaceRecord rec;
+    rec.type = s.type;
+    rec.radius = s.radius;
+    rec.thickness = s.thickness;
+    rec.glass = s.glass;
+    rec.semiDiameter = s.semiDiameter;
+    rec.conic = s.conic;
+    rec.stop = (i == stopSurfIndex);
+    rec.decenterX = s.decenterX;
+    rec.decenterY = s.decenterY;
+    rec.tiltX = s.tiltX;
+    rec.tiltY = s.tiltY;
+
+    if (rec.type == "Even Asphere") {
+      QStringList coeffStrings;
+      for (int k = 0; k < 8; ++k) {
+        coeffStrings.append(QString::number(s.asphereCoeffs[k], 'g', 12));
+      }
+      rec.asphereCoeffs = coeffStrings.join(", ");
+    } else {
+      rec.asphereCoeffs = "";
+    }
+
+    outRecords.push_back(std::move(rec));
+  }
+
+  if (outRecords.size() < 2) return false;
+  return true;
+}
+
+void ModalithController::exportZmx(QTextStream& stream) {
+  stream << "FTYP Sequential\n";
+  stream << "TITL " << systemTitle_ << "\n";
+  stream << "UNIT 0\n";
+  stream << "TEMP " << QString::number(temperatureC_, 'g', 12) << "\n";
+
+  for (int i = 0; i < wavelengthsNm_.size(); ++i) {
+    stream << "WAVM " << (i + 1) << " " << QString::number(wavelengthsNm_[i] / 1000.0, 'g', 12) << " 1.0\n";
+  }
+
+  int stopIndex = 1;
+  const auto& records = surfaceModel_.records();
+  for (int i = 0; i < records.size(); ++i) {
+    if (records[i].stop) {
+      stopIndex = i + 1;
+      break;
+    }
+  }
+  stream << "STOP " << stopIndex << "\n";
+
+  stream << "SURF 0\n";
+  stream << "  TYPE STANDARD\n";
+  stream << "  DISZ Infinity\n";
+
+  for (int i = 0; i < records.size(); ++i) {
+    const auto& rec = records[i];
+    stream << "SURF " << (i + 1) << "\n";
+    if (rec.type == "Even Asphere") {
+      stream << "  TYPE EVENASPH\n";
+    } else {
+      stream << "  TYPE STANDARD\n";
+    }
+
+    if (std::isfinite(rec.radius) && std::abs(rec.radius) > 1e-15) {
+      stream << "  CURV " << QString::number(1.0 / rec.radius, 'g', 12) << "\n";
+    } else {
+      stream << "  CURV 0.0\n";
+    }
+
+    stream << "  DISZ " << QString::number(rec.thickness, 'g', 12) << "\n";
+    stream << "  GLAS " << rec.glass << "\n";
+    stream << "  DIAM " << QString::number(rec.semiDiameter, 'g', 12) << "\n";
+    stream << "  CONI " << QString::number(rec.conic, 'g', 12) << "\n";
+
+    if (rec.type == "Even Asphere" && !rec.asphereCoeffs.isEmpty()) {
+      const auto parts = rec.asphereCoeffs.split(QRegularExpression("[,;\\s]+"), Qt::SkipEmptyParts);
+      for (int k = 0; k < std::min(8, static_cast<int>(parts.size())); ++k) {
+        stream << "  PARM " << (k + 1) << " " << QString::number(parts[k].toDouble(), 'g', 12) << "\n";
+      }
+    }
+
+    if (std::abs(rec.decenterX) > 1e-9 || std::abs(rec.decenterY) > 1e-9) {
+      stream << "  DECE " << QString::number(rec.decenterX, 'g', 12) << " " << QString::number(rec.decenterY, 'g', 12) << "\n";
+    }
+    if (std::abs(rec.tiltX) > 1e-9 || std::abs(rec.tiltY) > 1e-9) {
+      stream << "  TILT " << QString::number(rec.tiltX, 'g', 12) << " " << QString::number(rec.tiltY, 'g', 12) << "\n";
+    }
+  }
 }
 
 void ModalithController::undo() { surfaceModel_.undo(); }

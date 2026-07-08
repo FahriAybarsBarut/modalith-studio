@@ -48,35 +48,55 @@ TraceResult SequentialTracer::trace(const OpticalSystem& system, const Ray& inpu
       return result;
     }
 
-    const auto next_material = surface.material_after
-        ? surface.material_after : MaterialCatalog::air();
-    const double next_index = next_material->refractive_index(
-        input.wavelength_nm, system.temperature_c);
-    if (!(next_index > 0.0) || !std::isfinite(next_index)) {
-      result.failed_surface = index;
-      result.failure = TraceFailure::InvalidIndex;
-      return result;
-    }
+    Vec3 outgoing_direction;
+    double next_index = current_index;
 
-    const auto outgoing = refract(result.ray.direction, intersection.normal_global,
-                                  current_index, next_index);
-    if (!outgoing) {
-      result.failed_surface = index;
-      result.failure = TraceFailure::TotalInternalReflection;
-      return result;
+    if (surface.profile.type == SurfaceType::CoordinateBreak) {
+      // CoordinateBreak: ray passes through with only the coordinate
+      // transform applied (handled by intersect_surface). No refraction.
+      outgoing_direction = result.ray.direction;
+    } else if (surface.is_mirror) {
+      // Mirror reflection: d_out = d_in - 2 * dot(d_in, n) * n
+      const Vec3 d_in = normalized(result.ray.direction);
+      Vec3 n = normalized(intersection.normal_global);
+      if (dot(d_in, n) > 0.0) {
+        n = -n;
+      }
+      outgoing_direction = normalized(d_in - 2.0 * dot(d_in, n) * n);
+    } else {
+      // Standard refraction through the surface.
+      const auto mat = surface.material_after
+          ? surface.material_after : MaterialCatalog::air();
+      next_index = mat->refractive_index(
+          input.wavelength_nm, system.temperature_c);
+      if (!(next_index > 0.0) || !std::isfinite(next_index)) {
+        result.failed_surface = index;
+        result.failure = TraceFailure::InvalidIndex;
+        return result;
+      }
+
+      const auto refracted = refract(result.ray.direction,
+                                     intersection.normal_global,
+                                     current_index, next_index);
+      if (!refracted) {
+        result.failed_surface = index;
+        result.failure = TraceFailure::TotalInternalReflection;
+        return result;
+      }
+      outgoing_direction = *refracted;
     }
 
     result.ray.optical_path_length += current_index * intersection.distance;
     result.segments.push_back({.surface_index = index,
                                .intercept = intersection.point_global,
-                               .direction_after = *outgoing,
+                               .direction_after = outgoing_direction,
                                .refractive_index_before = current_index,
                                .refractive_index_after = next_index,
                                .geometric_length = intersection.distance,
                                .optical_path_length = result.ray.optical_path_length});
 
-    result.ray.direction = *outgoing;
-    result.ray.origin = intersection.point_global + *outgoing * kRayOffset;
+    result.ray.direction = outgoing_direction;
+    result.ray.origin = intersection.point_global + outgoing_direction * kRayOffset;
     current_index = next_index;
   }
   return result;

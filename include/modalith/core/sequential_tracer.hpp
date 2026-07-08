@@ -8,9 +8,19 @@
 
 namespace modalith {
 
+struct FieldAngle {
+  double x_degrees{};
+  double y_degrees{};
+};
+
 struct OpticalSystem {
   std::string title;
   std::vector<OpticalSurface> surfaces;
+  
+  std::vector<FieldAngle> fields;
+  std::vector<double> wavelengths_nm;
+  std::size_t primary_wavelength_index{0};
+
   double temperature_c{20.0};
 };
 
