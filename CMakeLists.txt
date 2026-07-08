@@ -45,6 +45,7 @@ add_library(modalith_core
   src/zmx_parser.cpp
 )
 add_library(Modalith::Core ALIAS modalith_core)
+set_property(TARGET modalith_core PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(modalith_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

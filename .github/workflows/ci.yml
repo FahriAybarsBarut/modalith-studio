@@ -12,7 +12,7 @@ jobs:
 
       - name: Check clang-format
         run: |
-          find src include apps tests -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) \
+          find src include apps tests -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -not -path 'include/modalith/entt/*' \
             | xargs clang-format --dry-run --Werror
 
   build-and-test:
